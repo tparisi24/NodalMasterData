@@ -1,0 +1,193 @@
+//PSSE Source reference ETL to check for updates and update master node. The Load, Bus and Branch Master nodes are created from the PSSE files
+// need to take the date from the name of the file and use it in the PublishedDate to make this more sustainable
+//creating PSSE Load Node and constraint
+LOAD CSV WITH HEADERS FROM "file:///PSSE_Load-2018_05.csv" as pl
+CREATE (:PSSE_Load {NomKvOfBus: toInteger(pl.`Nom kV of Bus`),
+										NameNom: pl.`Name_Nominal kV of Bus`,
+										Memo: pl.Memo,
+										NumberOfBus: toInteger(pl.`Number of Bus`),
+										NameOfBus: pl.`Name of Bus`,
+										AreaNameofLoad: pl.`Area Name of Load`,
+										ZoneNameofLoad: pl.`Zone Name of Load`,
+										Id: toInteger(pl.ID),
+										Status: pl.Status,
+										MW: toFloat(pl.MW),
+										Mvar: toFloat(pl.Mvar),
+										MVA: toFloat(pl.MVA),
+										S_MW: toInteger(pl.`S MW`),
+										S_Mvar: toFloat(pl.`S Mvar`),
+										DistStatus: pl.`Dist Status`,
+										DistMWInput: toInteger(pl.`Dist MW Input`),
+										DistMvarInput: toInteger(pl.`Dist Mvar Input`),
+                    PublishedDate: datetime('2018-05-01T00:00:00')})
+
+                    //create constraint on bus, loadid, and published date
+                    CREATE CONSTRAINT ON (psse_load:PSSE_Load) ASSERT (psse_load.NumberOfBus,psse_load.Id,psse_load.PublishedDate) IS NODE KEY
+
+//creating a master load node from the reference SET
+MATCH  (pl:PSSE_Load)
+MERGE (:Load {LoadName:pl.NameOfBus + '_' + pl.Id})
+
+//create constraint on Load node
+CREATE CONSTRAINT ON(load:Load) ASSERT load.LoadName IS UNIQUE
+
+//creating a relationship from the psse load reference set to the master node
+MATCH (l:Load), (pl:PSSE_Load)
+WHERE pl.NameOfBus + '_' + pl.Id = l.LoadName
+MERGE (pl)-[:IS_REFERENCE_OF]->(l);
+
+//loading a newer psse file to a temp location
+LOAD CSV WITH HEADERS FROM "file:///PSSE_Load-2019_09.csv" as pl
+CREATE (:PSSE_Load_temp {NomKvOfBus: toInteger(pl.`Nom kV of Bus`),
+										NameNom: pl.`Name_Nominal kV of Bus`,
+										Memo: pl.Memo,
+										NumberOfBus: toInteger(pl.`Number of Bus`),
+										NameOfBus: pl.`Name of Bus`,
+										AreaNameofLoad: pl.`Area Name of Load`,
+										ZoneNameofLoad: pl.`Zone Name of Load`,
+										Id: toInteger(pl.ID),
+										Status: pl.Status,
+										MW: toFloat(pl.MW),
+										Mvar: toFloat(pl.Mvar),
+										MVA: toFloat(pl.MVA),
+										S_MW: toInteger(pl.`S MW`),
+										S_Mvar: toFloat(pl.`S Mvar`),
+										DistStatus: pl.`Dist Status`,
+										DistMWInput: toInteger(pl.`Dist MW Input`),
+										DistMvarInput: toInteger(pl.`Dist Mvar Input`),
+                    PublishedDate: datetime('2019-09-01T00:00:00')})
+
+//compare psse temp load to psse load to see if any updates, removing the ones which already exist, and add in the updated records to PSSE Load node
+MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l:Load), (plt:PSSE_Load_temp)
+WHERE pl.Id = plt.Id
+      AND pl.NumberOfBus = plt.NumberOfBus
+      AND (pl.NomKvOfBus=plt.NomKvOfBus
+      AND pl.NameNom = plt.NameNom
+      AND pl.Memo = plt.Memo
+      AND pl. NameOfBus = plt.NameOfBus
+      AND pl.AreaNameofLoad = plt.AreaNameofLoad
+      AND pl.ZoneNameofLoad=plt.ZoneNameofLoad
+      AND pl.Status = plt.Status
+      AND pl.MW = plt.MW
+      AND pl.Mvar = plt.Mvar
+      AND pl.MVA = plt.MVA
+      AND pl.S_MW=plt.S_MW
+      AND pl.S_Mvar= plt.S_Mvar
+      AND pl.DistStatus = plt.DistStatus
+      AND pl.DistMWInput = plt.DistMWInput
+      AND pl.DistMvarInput = plt.DistMvarInput)
+delete plt
+
+// add in the new/updated records to the PSSE_Load Reference set
+//note we do not need to check for duplicate data, the previous step removes any nodes which are the "most recent" and have the same properties
+MATCH  (plt:PSSE_Load_temp)
+			CREATE  (:PSSE_Load {NomKvOfBus: plt.NomKvOfBus,
+													NameNom: plt.NameNom,
+													Memo: plt.Memo,
+													NumberOfBus: plt.NumberOfBus,
+													NameOfBus: plt.NameOfBus,
+													AreaNameofLoad: plt.AreaNameofLoad,
+													ZoneNameofLoad: plt.ZoneNameofLoad,
+													Id: plt.Id,
+													Status: plt.Status,
+													MW: plt.MW,
+													Mvar: plt.Mvar,
+													MVA: plt.MVA,
+													S_MW: plt.S_MW,
+													S_Mvar: plt.S_Mvar,
+													DistStatus: plt.DistStatus,
+													DistMWInput: plt.DistMWInput,
+													DistMvarInput: plt.DistMvarInput,
+			                    PublishedDate: plt.PublishedDate})
+
+//need to add in a check for confidence if names are the same and bus is the same 100%, if only name 90%, if bus_id 80%.  Then the user needs to verify
+// create new reference for load, create update of relationship and remove the older reference
+//name and
+MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l), (plu:PSSE_Load)
+WHERE pl.NumberOfBus = plu.NumberOfBus
+AND pl.NameOfBus = plu.NameOfBus
+AND pl.Id=plu.Id
+AND pl.PublishedDate < plu.PublishedDate
+MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"100.00%"}]->(pl)
+
+//Only name and id
+MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l), (plu:PSSE_Load)
+WHERE NOT (plu)-[:IS_UPDATE_OF]->(pl)
+AND pl.NameOfBus = plu.NameOfBus
+AND pl.Id=plu.Id
+AND pl.PublishedDate < plu.PublishedDate
+MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"90.00%"}]->(pl)
+
+//only bus and id
+MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l:Load), (plu:PSSE_Load)
+WHERE NOT (plu)-[:IS_UPDATE_OF]->()
+AND NOT (plu)-[:IS_REFERENCE_OF]-()
+AND pl.NumberOfBus = plu.NumberOfBus
+AND pl.Id=plu.Id
+AND pl.PublishedDate < plu.PublishedDate
+MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"80.00%"}]->(pl)
+
+//only MEMO
+MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l:Load), (plu:PSSE_Load)
+WHERE NOT (plu)-[:IS_REFERENCE_OF]-()
+AND NOT ()-[:IS_UPDATE_OF]-(plu)
+AND NOT (plu)-[:IS_UPDATE_OF]-()
+AND plu.Memo=pl.Memo
+AND plu.PublishedDate>pl.PublishedDate
+MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"60.00%"}]->(pl)
+
+//what are the ones which don't have a match
+MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l:Load), (plu:PSSE_Load)
+WHERE NOT (plu)-[:IS_UPDATE_OF]->()
+AND NOT (plu)-[:IS_REFERENCE_OF]-()
+AND pl.NumberOfBus = plu.NumberOfBus
+AND pl.Id=plu.Id
+AND pl.PublishedDate < plu.PublishedDate
+return pl,plu
+//MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"80.00%"}]->(pl)
+
+// create new reference for load, create update of relationship and remove the older reference
+MATCH (plu:PSSE_Load)-[u:IS_UPDATE_OF{confidence:"100.00%"}]->(pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l)
+WHERE pl.NumberOfBus = plu.NumberOfBus
+AND pl.Id=plu.Id
+AND pl.PublishedDate < plu.PublishedDate
+MERGE (plu)-[:IS_REFERENCE_OF]->(l)
+DELETE r
+
+// create new reference for load, create update of relationship and remove the older reference
+MATCH (plu:PSSE_Load)-[u:IS_UPDATE_OF{confidence:"90.00%"}]->(pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l)
+WHERE pl.NameOfBus = plu.NameOfBus
+AND pl.Id=plu.Id
+AND pl.PublishedDate < plu.PublishedDate
+MERGE (plu)-[:IS_REFERENCE_OF]->(l)
+DELETE r
+
+//remove all updated nodes from load temp if already added in (leaving only new nodes)
+MATCH (pl:PSSE_Load), (plt:PSSE_Load_temp)
+WHERE pl.Id = plt.Id
+      AND pl.NumberOfBus = plt.NumberOfBus
+      AND pl.PublishedDate=plt.PublishedDate
+delete plt
+
+											//finding all nodes that might be "new" load nodes, and creating them, CALLING THEM TEMP
+											MATCH (pl:PSSE_Load)
+											WHERE NOT (pl)-[:IS_UPDATE_OF]-()
+											AND NOT ()-[:IS_UPDATE_OF]-(pl)
+											AND NOT (pl)-[:IS_REFERENCE_OF]-()
+											//RETURN count (pl)
+											MERGE (:Load {LoadName:pl.NameOfBus + '_' + pl.Id, Temp:True})
+
+											// create relationships to the new nodes/reference nodes
+											MATCH  (pl:PSSE_Load), (l:Load)
+											WHERE NOT ()-[:IS_REFERENCE_OF]-(l)
+											AND NOT (pl)-[:IS_UPDATE_OF]-()
+											AND NOT ()-[:IS_UPDATE_OF]-(pl)
+											MERGE (pl)-[:IS_REFERENCE_OF]->(l)
+
+
+//FIND ALL THE LOAD NODES WHICH HAVE NO REFERENCE SET
+MATCH (l:Load),(pl:PSSE_Load)
+WHERE NOT ()-[:IS_REFERENCE_OF]-(l)
+AND NOT (pl)-[:IS_UPDATE_OF]-()
+AND NOT ()-[:IS_UPDATE_OF]-(pl)
+RETURN pl
