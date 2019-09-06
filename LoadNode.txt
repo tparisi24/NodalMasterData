@@ -182,6 +182,7 @@ delete plt
 											WHERE NOT ()-[:IS_REFERENCE_OF]-(l)
 											AND NOT (pl)-[:IS_UPDATE_OF]-()
 											AND NOT ()-[:IS_UPDATE_OF]-(pl)
+											AND l.LoadName = pl.NameOfBus + '_' + pl.Id
 											MERGE (pl)-[:IS_REFERENCE_OF]->(l)
 
 
