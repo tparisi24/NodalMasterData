@@ -1,3 +1,4 @@
+//ETL script to load and update load nodes
 //loading a newer psse file to a temp location
 LOAD CSV WITH HEADERS FROM "file:///PSSE_Load-2019_09.csv" as pl
 CREATE (:PSSE_Load_temp {NomKvOfBus: toInteger(pl.`Nom kV of Bus`),
@@ -87,7 +88,7 @@ AND NOT (plu)-[:IS_REFERENCE_OF]-()
 AND pl.NumberOfBus = plu.NumberOfBus
 AND pl.Id=plu.Id
 AND pl.PublishedDate < plu.PublishedDate
-MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"80.00%"}]->(pl)
+MERGE (plu)-[:IS_CANDIDATE_OF{updateDate:plu.PublishedDate, confidence:"80.00%"}]->(pl)
 
 //only MEMO
 MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l:Load), (plu:PSSE_Load)
@@ -96,17 +97,17 @@ AND NOT ()-[:IS_UPDATE_OF]-(plu)
 AND NOT (plu)-[:IS_UPDATE_OF]-()
 AND plu.Memo=pl.Memo
 AND plu.PublishedDate>pl.PublishedDate
-MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"60.00%"}]->(pl)
+MERGE (plu)-[:IS_CANDIDATE_OF{updateDate:plu.PublishedDate, confidence:"60.00%"}]->(pl)
 
 //what are the ones which don't have a match
 MATCH (pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l:Load), (plu:PSSE_Load)
 WHERE NOT (plu)-[:IS_UPDATE_OF]->()
+AND NOT (plu)-[:IS_CANDIDATE_OF]->()
 AND NOT (plu)-[:IS_REFERENCE_OF]-()
 AND pl.NumberOfBus = plu.NumberOfBus
 AND pl.Id=plu.Id
 AND pl.PublishedDate < plu.PublishedDate
 return pl,plu
-//MERGE (plu)-[:IS_UPDATE_OF{updateDate:plu.PublishedDate, confidence:"80.00%"}]->(pl)
 
 // create new reference for load, create update of relationship and remove the older reference
 MATCH (plu:PSSE_Load)-[u:IS_UPDATE_OF{confidence:"100.00%"}]->(pl:PSSE_Load)-[r:IS_REFERENCE_OF]->(l)
@@ -124,7 +125,7 @@ AND pl.PublishedDate < plu.PublishedDate
 MERGE (plu)-[:IS_REFERENCE_OF]->(l)
 DELETE r
 
-//remove all updated nodes from load temp if already added in (leaving only new nodes)
+//remove all updated nodes from load temp if already added in
 MATCH (pl:PSSE_Load), (plt:PSSE_Load_temp)
 WHERE pl.Id = plt.Id
       AND pl.NumberOfBus = plt.NumberOfBus
