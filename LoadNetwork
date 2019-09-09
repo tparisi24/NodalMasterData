@@ -1,0 +1,674 @@
+// Load File for Network
+//LOAD
+    // PSSE Load Node
+    LOAD CSV WITH HEADERS FROM "file:///PSSE_Load-2018_05.csv" as pl
+    CREATE (:PSSE_Load {NomKvOfBus: toInteger(pl.`Nom kV of Bus`),
+    										NameNom: pl.`Name_Nominal kV of Bus`,
+    										Memo: pl.Memo,
+    										NumberOfBus: toInteger(pl.`Number of Bus`),
+    										NameOfBus: pl.`Name of Bus`,
+    										AreaNameofLoad: pl.`Area Name of Load`,
+    										ZoneNameofLoad: pl.`Zone Name of Load`,
+    										Id: toInteger(pl.ID),
+    										Status: pl.Status,
+    										MW: toFloat(pl.MW),
+    										Mvar: toFloat(pl.Mvar),
+    										MVA: toFloat(pl.MVA),
+    										S_MW: toInteger(pl.`S MW`),
+    										S_Mvar: toFloat(pl.`S Mvar`),
+    										DistStatus: pl.`Dist Status`,
+    										DistMWInput: toInteger(pl.`Dist MW Input`),
+    										DistMvarInput: toInteger(pl.`Dist Mvar Input`),
+                        PublishedDate: datetime('2018-05-01T00:00:00')})
+
+                        //create constraint on bus, loadid, and published date
+                        CREATE CONSTRAINT ON (psse_load:PSSE_Load) ASSERT (psse_load.NumberOfBus,psse_load.Id,psse_load.PublishedDate) IS NODE KEY
+
+    //Genscape Load
+    creating a master load node from the reference SET
+    MATCH  (pl:PSSE_Load)
+    MERGE (:Load {LoadName:pl.NameOfBus + '_' + pl.Id})
+
+                    //create constraint on Load node
+                    CREATE CONSTRAINT ON(load:Load) ASSERT load.LoadName IS UNIQUE
+
+                    //creating a relationship from the psse load reference set to the master node
+                    MATCH (l:Load), (pl:PSSE_Load)
+                    WHERE pl.NameOfBus + '_' + pl.Id = l.LoadName
+                    MERGE (pl)-[:IS_REFERENCE_OF]->(l);
+
+//BUS
+    //PSSE Bus
+    //can not load null columns in a merge, so using create and will also put a constraint on the node.
+    LOAD CSV WITH HEADERS FROM "file:///PSSE_Bus-2018_05.csv" as b
+    CREATE (:PSSE_Bus {Number: toInt(b.Number),
+    									Name: b.Name,
+    									AreaName: b.`Area Name`,
+    									NomKv: toInt(b.`Nom kV`),
+    								  AngleDeg: toFloat(b.`Angle (Deg)`),
+    									LoadMW: toFloat(b.`Load MW`),
+    									GenMw: toFloat(b.`Gen MW`),
+    							    AgtShuntMw: toInt(b.`Act G Shunt MW`),
+    								  AreaNum: toInt(b.`Area Num`),
+    									ZoneNum: toInt(b.`Zone Num`),
+                      PublishedDate: datetime('2018-05-01T00:00:00')})
+
+                    //create constraint on bus, and published date
+                    CREATE CONSTRAINT ON (psse_bus:PSSE_Bus) ASSERT (psse_bus.Number,psse_bus.PublishedDate) IS NODE KEY
+
+    //Genscape Bus
+    //created first from the PSSE bus; note that the name and voltage is not sufficient to create a node key
+    //The type property also needs to be included, need an automated way to detect the type
+    MATCH  (bus:PSSE_Bus)
+    CREATE (:Bus {Name:bus.Name, Voltage:bus.NomKv, PSSEID:bus.Number })
+
+                      //constraint needs to be made on type and name.. who of them can be the same..
+                      //all nodes must have these.. not a good option
+                      //CREATE CONSTRAINT ON (bus:Bus) ASSERT (bus.PSSEID) IS NODE KEY
+
+                      //relationship to psse bus and genscape bus
+                      MATCH  (pbus:PSSE_Bus),(bus:Bus)
+                      WHERE (pbus.Number = bus.PSSEID)
+                      MERGE (pbus) -[:IS_REFERENCE_OF]->(bus)
+
+                      ////bus to load relationship based on psse reference
+                      MATCH (pl:PSSE_Load)-[:IS_REFERENCE_OF]-> (l:Load), (b:Bus)
+                      WHERE pl.NumberOfBus = b.PSSEID
+                      MERGE (b)-[:DRAWS_POWER]->(l);
+    //SEER Bus
+    LOAD CSV WITH HEADERS FROM "file:///SEER_Bus-2019_07.csv" as b
+    MERGE (:SEER_Bus {BusID: toInt(b.bus_id),
+    									 bus_name: b.bus_name,
+    									 substation_id: toInt(b.substation_id),
+    									 NomkV: toInt(b.NomkV),
+    									 Type: b.type,
+    									 iso_bus_number: toInt(b.iso_bus_no),
+    									 Status: b.status,
+                       PublishedDate:  datetime('2019-07-01T00:00:00')})
+
+                       //constraint needs to be made on type and name.. who of them can be the same.. all nodes must have these.. not a good option
+                       CREATE CONSTRAINT ON (bus:SEER_Bus) ASSERT (bus.BusID,bus.PublishedDate) IS NODE KEY
+
+                       //relationship from psse bus to genscape bus and seer bus to genscape bus
+                       //maybe want to add a source node or property of reference set
+                       MATCH  (sbus:SEER_Bus),(bus:Bus)
+                       WHERE (sbus.iso_bus_number = bus.PSSEID)
+                       MERGE (sbus) -[:IS_REFERENCE_OF]->(bus)
+
+//BRANCH
+    //psse branches
+    LOAD CSV WITH HEADERS FROM "file:///PSSE_Branch-2018_04.csv" as b
+    CREATE (:PSSE_Branch {FromNumber: toInt(b.`From Number`),
+                       FromName: b.`From Name`,
+                       ToNumber: toInt(b.`To Number`),
+                       ToName: b.`To Name`,
+                       Circuit: toInt(b.Circuit),
+                       Status: b.Status,
+                       BranchDevice: b.`Branch Device Type`,
+                       Xfrmr: b.Xfrmr,
+                       R: toFloat(b.R),
+                       X: toFloat(b.X),
+                       B: toFloat(b.B),
+                       LimMVA_A: toInt(b.`Lim MVA A`),
+                       LimMVA_B: toInt(b.`Lim MVA B`),
+                       LimMVA_C: toInt(b.`Lim MVA C`),
+                       Memo: b.Memo,
+                       PublishedDate:datetime('2018-04-01T00:00:00')})
+
+                       //CONSTRAINT
+                       CREATE CONSTRAINT ON (branch:PSSE_Branch) ASSERT (branch.ToNumber,branch.FromNumber,branch.Circuit) IS NODE KEY
+
+      //Genscape Branch
+      // create genscape branches from psse file
+      MATCH (pb:PSSE_Branch)
+      CREATE (:Branch {Name: pb.FromName + "_"+ pb.ToName,
+      									 Circuit: pb.Circuit,
+      									 Type: pb.Type})
+
+                        //CONSTRAINT
+                        CREATE CONSTRAINT ON (branch:Branch) ASSERT (branch.Name,branch.Circuit) IS NODE KEY
+
+                         //Relationship Genscape Branch to PSSE Branch
+      									 	MATCH (pb:PSSE_Branch),(b:Branch)
+      										WHERE pb.FromName + "_"+ pb.ToName = b.Name
+      										AND pb.Circuit = b.Circuit
+      										MERGE (pb)-[:IS_REFERENCE_OF]->(b)
+
+                          //BUS TO BRANCH
+                          MATCH (pb:PSSE_Branch)-[:IS_REFERENCE_OF]->(b:Branch), (pbs:PSSE_Bus)-[:IS_REFERENCE_OF]->(bs:Bus)
+                          WHERE toInt(pb.ToNumber) = toInt(pbs.Number)
+                          MERGE (b)-[:SENDS_POWER]->(bs)
+
+                          //BRANCH TO BUS
+                          MATCH (pb:PSSE_Branch)-[:IS_REFERENCE_OF]->(b:Branch), (pbs:PSSE_Bus)-[:IS_REFERENCE_OF]->(bs:Bus)
+                          WHERE toInt(pb.FromNumber) = toInt(pbs.Number)
+                          MERGE (bs)-[:SENDS_POWER]->(b)
+
+//Bus Aggregate
+    //Descartes
+    LOAD CSV WITH HEADERS FROM "file:///Descartes.csv" as d
+    CREATE (:Descartes {Latitude: d.Latitude,
+    										Longitude: d.Longitude})
+
+    //create constraint on lat and long value
+    CREATE CONSTRAINT ON (descartes:Descartes) ASSERT (descartes.Latitude, descartes.Longitude) IS NODE KEY
+
+    //matching descartes Datamatch(d:Descartes), (b:BusAggregate)
+    where tofloat(b.Latitude) >= tofloat(d.Latitude)-.0001
+    and tofloat(b.Latitude)<= tofloat(d.Latitude)+.0001
+    and tofloat(b.Longitude) >= tofloat(d.Longitude)-.0001
+    and tofloat(b.Longitude)<= tofloat(d.Longitude)+.0001
+    return b.GId, b.Name,d.ID, b.Latitude,d.Latitude,b.Longitude,d.Longitude
+    limit 5
+
+//GENERATOR
+    // SEER Generator
+    // some columns can be null, so just using a create. Note this may create duplicates. merge is better
+    LOAD CSV WITH HEADERS FROM "file:///SEER_Generator-2019_07.csv" as g
+    CREATE (:SEER_Generator {unit_id:toInt(g.unit_id),
+    											unit_name:g.unit_name,
+    											capacity:toFloat(g.capacity),
+    											bus_id:toInt(g.bus_id),
+    											Zone:g.Zone,
+    											SubRegion:g.SubRegion,
+    											eia_latitude: toFloat(g.eia_latitude),
+    											eia_longitude:toFloat(g.eia_longitude),
+    											unit_type:g.unit_type,
+    											fuel_type:g.fuel_type,
+    											fuel_transit_adder:g.fuel_transit_adder,
+    											eia_plant_name:g.eia_plant_name,
+    											online_date:date(g.online_date),
+    											econ_min:tofloat(g.econ_min),
+    											min_run_time:toInt(g.min_run_time),
+    											min_down_time:toInt(g.min_down_time),
+    											ramp_up_rate:toFloat(g.ramp_up_rate),
+    											ramp_down_rate:toFloat(g.ramp_down_rate),
+    											spinning_capable:toInt(g.spinning_capable),
+    											nonspinning_capable:toInt(g.nonspinning_capable),
+    											is_fast_start:g.is_fast_start,
+    											startup_energy_req:g.startup_energy_req,
+    											startup_cost_adder:toFloat(g.startup_cost_adder),
+    											emergency_ramp_rate:toFloat(g.emergency_ramp_rate),
+                          PublishedDate: datetime('2019-07-01T00:00:00')})
+
+                          //CONSTRAINT
+                          CREATE CONSTRAINT ON (sgen:SEER_Generator) ASSERT (sgen.unit_id, sgen.PublishedDate) IS NODE KEY
+
+      //PSSE Generator
+      LOAD CSV WITH HEADERS FROM "file:///PSSE_Generator-2018_05.csv" as g
+      CREATE (:PSSE_Generator {NumberOfBus: toInt(g.`Number of Bus`),
+            									 NameOfBus: g.`Name of Bus`,
+            									 ID: toInt(g.ID),
+            									 Status: g.Status,
+            									 GenMW: toFloat(g.`Gen MW`),
+            									 AGC: g.AGC,
+            									 MinMW: toFloat(g.`Min MW`),
+            									 MaxMW: toFloat(g.`Max MW`),
+            									 CostModel: g.`Cost Model`,
+            									 PartFactor: g.`Part. Factor`,
+            									 Memo: g.Memo,
+                               PublishedDate:datetime('2018-05-01T00:00:00')})
+
+                               //constraint
+                               // need to validate what constraint should be
+                               // two different nodes have same bus, but different MW values
+                               //CREATE CONSTRAINT ON (pgen:PSSE_Generator) ASSERT (pgen.NumberOfBus,pgen.ID,pgen.PublishedDate) IS NODE KEY
+
+    ////EIA Generator
+    //Operable
+    LOAD CSV WITH HEADERS FROM "file:///EIA860_Generator_Y2018_Operable.csv" as g
+    CREATE (:EIA_Generator {UtilityID: toInt(g.`Utility ID`),
+                            UtilityName: g.`Utility Name`,
+                            PlantCode: toInt(g.`Plant Code`),
+                            PlantName: g.`Plant Name`,
+                            State: g.`State`,
+                            County: g.`County`,
+                            GeneratorID: g.`Generator ID`,
+                            Technology: g.`Technology`,
+                            PrimeMover: g.`Prime Mover`,
+                            UnitCode: g.`Unit Code`,
+                            Ownership: g.`Ownership`,
+                            DuctBurners: g.`Duct Burners`,
+                            CanBypassHeatRecoverySteamGenerator: g.`Can Bypass Heat Recovery Steam Generator?`,
+                            RTOISOLMPNodeDesignation: g.`RTO/ISO LMP Node Designation`,
+                            RTOISOLocationDesignationforReportingWholesaleSalesDatatoFERC: g.`RTO/ISO Location Designation for Reporting Wholesale Sales Data to FERC`,
+                            NameplateCapacityMW: toFloat(g.`Nameplate Capacity (MW)`),
+                            NameplatePowerFactor: g.`Nameplate Power Factor`,
+                            SummerCapacityMW: toFloat(g.`Summer Capacity (MW)`),
+                            WinterCapacityMW: toFloat(g.`Winter Capacity (MW)`),
+                            MinimumLoadMW: toFloat(g.`Minimum Load (MW)`),
+                            UprateorDerateCompletedDuringYear: toInt(g.`Uprate or Derate Completed During Year`),
+                            MonthUprateorDerateCompleted: toInt(g.`Month Uprate or Derate Completed`),
+                            YearUprateorDerateCompleted: toInt(g.`Year Uprate or Derate Completed`),
+                            Status: g.`Status`,
+                            SynchronizedtoTransmissionGrid: g.`Synchronized to Transmission Grid`,
+                            OperatingMonth: toInt(g.`Operating Month`),
+                            OperatingYear: toInt(g.`Operating Year`),
+                            PlannedRetirementMonth: toInt(g.`Planned Retirement Month`),
+                            PlannedRetirementYear: toInt(g.`Planned Retirement Year`),
+                            AssociatedwithCombinedHeatandPowerSystem: g.`Associated with Combined Heat and Power System`,
+                            SectorName: g.`Sector Name`,
+                            Sector: g.`Sector`,
+                            ToppingorBottoming: g.`Topping or Bottoming`,
+                            EnergySource1: g.`Energy Source 1`,
+                            EnergySource2: g.`Energy Source 2`,
+                            EnergySource3: g.`Energy Source 3`,
+                            EnergySource4: g.`Energy Source 4`,
+                            EnergySource5: g.`Energy Source 5`,
+                            EnergySource6: g.`Energy Source 6`,
+                            StartupSource1: g.`Startup Source 1`,
+                            StartupSource2: g.`Startup Source 2`,
+                            StartupSource3: g.`Startup Source 3`,
+                            StartupSource4: g.`Startup Source 4`,
+                            SolidFuelGasificationSystem: g.`Solid Fuel Gasification System?`,
+                            CarbonCaptureTechnology: g.`Carbon Capture Technology?`,
+                            TurbinesorHydrokineticBuoys: g.`Turbines or Hydrokinetic Buoys`,
+                            TimefromColdShutdowntoFullLoad: g.`Time from Cold Shutdown to Full Load`,
+                            FluidizedBedTechnology: g.`Fluidized Bed Technology?`,
+                            PulverizedCoalTechnology: g.`Pulverized Coal Technology?`,
+                            StokerTechnology: g.`Stoker Technology?`,
+                            OtherCombustionTechnology: g.`Other Combustion Technology?`,
+                            SubcriticalTechnology: g.`Subcritical Technology?`,
+                            SupercriticalTechnology: g.`Supercritical Technology?`,
+                            UltrasupercriticalTechnology: g.`Ultrasupercritical Technology?`,
+                            PlannedNetSummerCapacityUprateMW: toFloat(g.`Planned Net Summer Capacity Uprate (MW)`),
+                            PlannedNetWinterCapacityUprateMW: toFloat(g.`Planned Net Winter Capacity Uprate (MW)`),
+                            PlannedUprateMonth: toInt(g.`Planned Uprate Month`),
+                            PlannedUprateYear: toInt(g.`Planned Uprate Year`),
+                            PlannedNetSummerCapacityDerateMW: toFloat(g.`Planned Net Summer Capacity Derate (MW)`),
+                            PlannedNetWinterCapacityDerateMW: toFloat(g.`Planned Net Winter Capacity Derate (MW)`),
+                            PlannedDerateMonth: toInt(g.`Planned Derate Month`),
+                            PlannedDerateYear: toInt(g.`Planned Derate Year`),
+                            PlannedNewPrimeMover: g.`Planned New Prime Mover`,
+                            PlannedEnergySource1: g.`Planned Energy Source 1`,
+                            PlannedNewNameplateCapacityMW: toFloat(g.`Planned New Nameplate Capacity (MW)`),
+                            PlannedRepowerMonth: toInt(g.`Planned Repower Month`),
+                            PlannedRepowerYear: toInt(g.`Planned Repower Year`),
+                            OtherPlannedModifications: g.`Other Planned Modifications?`,
+                            OtherModificationsMonth: toInt(g.`Other Modifications Month`),
+                            OtherModificationsYear: toInt(g.`Other Modifications Year`),
+                            MultipleFuels: g.`Multiple Fuels?`,
+                            CofireFuels: g.`Cofire Fuels?`,
+                            SwitchBetweenOilandNaturalGas: g.`Switch Between Oil and Natural Gas?`,
+                            PublishedDate:datetime('2019-09-03T00:00:00')})
+
+
+    //Planned EIA GENERATOR
+    LOAD CSV WITH HEADERS FROM "file:///EIA860_Generator_Y2018_Proposed.csv" as g
+    CREATE (:EIA_Generator {UtilityID: toInt(g.`Utility ID`),
+                            UtilityName: g.`Utility Name`,
+                            PlantCode: toInt(g.`Plant Code`),
+                            PlantName: g.`Plant Name`,
+                            State: g.`State`,
+                            County: g.`County`,
+                            GeneratorID: g.`Generator ID`,
+                            Technology: g.`Technology`,
+                            PrimeMover: g.`Prime Mover`,
+                            UnitCode: g.`Unit Code`,
+                            Ownership: g.`Ownership`,
+                            DuctBurners: g.`Duct Burners`,
+                            CanBypassHeatRecoverySteamGenerator: g.`Can Bypass Heat Recovery Steam Generator?`,
+                            RTOISOLMPNodeDesignation: g.`RTO/ISO LMP Node Designation`,
+                            RTOISOLocationDesignationforReportingWholesaleSalesDatatoFERC: g.`RTO/ISO Location Designation for Reporting Wholesale Sales Data to FERC`,
+                            NameplateCapacityMW: toFloat(g.`Nameplate Capacity (MW)`),
+                            NameplatePowerFactor: g.`Nameplate Power Factor`,
+                            SummerCapacityMW: toFloat(g.`Summer Capacity (MW)`),
+                            WinterCapacityMW: toFloat(g.`Winter Capacity (MW)`),
+                            Status: g.`Status`,
+                            EffectiveMonth: toInt(g.`Effective Month`),
+                            EffectiveYear: toInt(g.`Effective Year`),
+                            CurrentMonth: toInt(g.`Current Month`),
+                            CurrentYear: toInt(g.`Current Year`),
+                            AssociatedwithCombinedHeatandPowerSystem: g.`Associated with Combined Heat and Power System`,
+                            SectorName: g.`Sector Name`,
+                            Sector: g.`Sector`,
+                            PreviouslyCanceled: g.`Previously Canceled`,
+                            EnergySource1: g.`Energy Source 1`,
+                            EnergySource2: g.`Energy Source 2`,
+                            EnergySource3: g.`Energy Source 3`,
+                            EnergySource4: g.`Energy Source 4`,
+                            EnergySource5: g.`Energy Source 5`,
+                            EnergySource6: g.`Energy Source 6`,
+                            TurbinesorHydrokineticBuoys: g.`Turbines or Hydrokinetic Buoys`,
+                            FluidizedBedTechnology: g.`Fluidized Bed Technology?`,
+                            PulverizedCoalTechnology: g.`Pulverized Coal Technology?`,
+                            StokerTechnology: g.`Stoker Technology?`,
+                            OtherCombustionTechnology: g.`Other Combustion Technology?`,
+                            SubcriticalTechnology: g.`Subcritical Technology?`,
+                            SupercriticalTechnology: g.`Supercritical Technology?`,
+                            UltrasupercriticalTechnology: g.`Ultrasupercritical Technology?`,
+                            SolidFuelGasificationSystem: g.`Solid Fuel Gasification System?`,
+                            CarbonCaptureTechnology: g.`Carbon Capture Technology?`,
+                            MultipleFuels: g.`Multiple Fuels?`,
+                            SwitchBetweenOilandNaturalGas: g.`Switch Between Oil and Natural Gas?`,
+                            CofireFuels: g.`Cofire Fuels?`,
+                            PublishedDate:datetime('2019-09-03T00:00:00')})
+
+    //Retired and Cancelled EIA Generator
+    LOAD CSV WITH HEADERS FROM "file:///EIA860_Generator_Y2018_RetiredAndCancelled.csv" as g
+    CREATE (:EIA_Generator {UtilityID: toInt(g.`Utility ID`),
+                            UtilityName: g.`Utility Name`,
+                            PlantCode: toInt(g.`Plant Code`),
+                            PlantName: g.`Plant Name`,
+                            State: g.`State`,
+                            County: g.`County`,
+                            GeneratorID: g.`Generator ID`,
+                            Technology: g.`Technology`,
+                            PrimeMover: g.`Prime Mover`,
+                            UnitCode: g.`Unit Code`,
+                            Ownership: g.`Ownership`,
+                            DuctBurners: g.`Duct Burners`,
+                            CanBypassHeatRecoverySteamGenerator: g.`Can Bypass Heat Recovery Steam Generator?`,
+                            RTOISOLMPNodeDesignation: g.`RTO/ISO LMP Node Designation`,
+                            RTOISOLocationDesignationforReportingWholesaleSalesDatatoFERC: g.`RTO/ISO Location Designation for Reporting Wholesale Sales Data to FERC`,
+                            NameplateCapacityMW: toFloat(g.`Nameplate Capacity (MW)`),
+                            NameplatePowerFactor: g.`Nameplate Power Factor`,
+                            SummerCapacityMW: toFloat(g.`Summer Capacity (MW)`),
+                            WinterCapacityMW: toFloat(g.`Winter Capacity (MW)`),
+                            MinimumLoadMW: toFloat(g.`Minimum Load (MW)`),
+                            UprateorDerateCompletedDuringYear: g.`Uprate or Derate Completed During Year`,
+                            MonthUprateorDerateCompleted: g.`Month Uprate or Derate Completed`,
+                            YearUprateorDerateCompleted: g.`Year Uprate or Derate Completed`,
+                            Status: g.`Status`,
+                            SynchronizedtoTransmissionGrid: g.`Synchronized to Transmission Grid`,
+                            OperatingMonth: toInt(g.`Operating Month`),
+                            OperatingYear: toInt(g.`Operating Year`),
+                            RetirementMonth: toInt(g.`Retirement Month`),
+                            RetirementYear: toInt(g.`Retirement Year`),
+                            AssociatedwithCombinedHeatandPowerSystem: g.`Associated with Combined Heat and Power System`,
+                            SectorName: g.`Sector Name`,
+                            Sector: g.`Sector`,
+                            ToppingorBottoming: g.`Topping or Bottoming`,
+                            EnergySource1: g.`Energy Source 1`,
+                            EnergySource2: g.`Energy Source 2`,
+                            EnergySource3: g.`Energy Source 3`,
+                            EnergySource4: g.`Energy Source 4`,
+                            EnergySource5: g.`Energy Source 5`,
+                            EnergySource6: g.`Energy Source 6`,
+                            StartupSource1: g.`Startup Source 1`,
+                            StartupSource2: g.`Startup Source 2`,
+                            StartupSource3: g.`Startup Source 3`,
+                            StartupSource4: g.`Startup Source 4`,
+                            SolidFuelGasificationSystem: g.`Solid Fuel Gasification System?`,
+                            CarbonCaptureTechnology: g.`Carbon Capture Technology?`,
+                            TurbinesorHydrokineticBuoys: g.`Turbines or Hydrokinetic Buoys`,
+                            TimefromColdShutdowntoFullLoad: g.`Time from Cold Shutdown to Full Load`,
+                            FluidizedBedTechnology: g.`Fluidized Bed Technology?`,
+                            PulverizedCoalTechnology: g.`Pulverized Coal Technology?`,
+                            StokerTechnology: g.`Stoker Technology?`,
+                            OtherCombustionTechnology: g.`Other Combustion Technology?`,
+                            SubcriticalTechnology: g.`Subcritical Technology?`,
+                            SupercriticalTechnology: g.`Supercritical Technology?`,
+                            UltrasupercriticalTechnology: g.`Ultrasupercritical Technology?`,
+                            MultipleFuels: g.`Multiple Fuels?`,
+                            CofireFuels: g.`Cofire Fuels?`,
+                            SwitchBetweenOilandNaturalGas: g.`Switch Between Oil and Natural Gas?`,
+                       PublishedDate:datetime('2019-09-03T00:00:00')})
+
+                       //constraint
+                       //need a constraint but properties of these can change, speak with bill
+
+    //EIA Generation Aggregate
+    LOAD CSV WITH HEADERS FROM "file:///EIA860_GeneratorAggregate_Y2018.csv" as g
+    CREATE (:EIA_GenerationAggregate {UtilityID: toInt(g.`Utility ID`),
+    									UtilityName: g.`Utility Name`,
+    									PlantCode: toInt(g.`Plant Code`),
+    									PlantName: g.`Plant Name`,
+    									StreetAddress: g.`Street Address`,
+    									City: g.`City`,
+    									State: g.`State`,
+    									Zip: toInt(g.`Zip`),
+    									County: g.`County`,
+    									Latitude: toFloat(g.`Latitude`),
+    									Longitude: toFloat(g.`Longitude`),
+    									NERCRegion: g.`NERC Region`,
+    									BalancingAuthorityCode: toInt(g.`Balancing Authority Code`),
+    									BalancingAuthorityName: g.`Balancing Authority Name`,
+    									NameofWaterSource: g.`Name of Water Source`,
+    									PrimaryPurposeNAICSCode: g.`Primary Purpose (NAICS Code)`,
+    									RegulatoryStatus: g.`Regulatory Status`,
+    									Sector: g.`Sector`,
+    									SectorName: g.`Sector Name`,
+    									FERCCogenerationStatus: g.`FERC Cogeneration Status`,
+    									FERCCogenerationDocketNumber: g.`FERC Cogeneration Docket Number`,
+    									FERCSmallPowerProducerStatus: g.`FERC Small Power Producer Status`,
+    									FERCSmallPowerProducerDocketNumber: g.`FERC Small Power Producer Docket Number`,
+    									FERCExemptWholesaleGeneratorStatus: g.`FERC Exempt Wholesale Generator Status`,
+    									FERCExemptWholesaleGeneratorDocketNumber: g.`FERC Exempt Wholesale Generator Docket Number`,
+    									AshImpoundment: g.`Ash Impoundment?`,
+    									AshImpoundmentLined: g.`Ash Impoundment Lined?`,
+    									AshImpoundmentStatus: g.`Ash Impoundment Status`,
+    									TransmissionorDistributionSystemOwner: g.`Transmission or Distribution System Owner`,
+    									TransmissionorDistributionSystemOwnerID: g.`Transmission or Distribution System Owner ID`,
+    									TransmissionorDistributionSystemOwnerState: g.`Transmission or Distribution System Owner State`,
+    									GridVoltagekV: toFloat(g.`Grid Voltage (kV)`),
+    									GridVoltage2kV: toFloat(g.`Grid Voltage 2 (kV)`),
+    									GridVoltage3kV: toFloat(g.`Grid Voltage 3 (kV)`),
+    									EnergyStorage: g.`Energy Storage`,
+    									NaturalGasLDCName: g.`Natural Gas LDC Name`,
+    									NaturalGasPipelineName1: g.`Natural Gas Pipeline Name 1`,
+    									NaturalGasPipelineName2: g.`Natural Gas Pipeline Name 2`,
+    									NaturalGasPipelineName3: g.`Natural Gas Pipeline Name 3`,
+    									PipelineNotes: g.`Pipeline Notes`,
+    									NaturalGasStorage: g.`Natural Gas Storage`,
+    									LiquefiedNaturalGasStorage: g.`Liquefied Natural Gas Storage`,
+                      PublishedDate:datetime('2019-09-03T00:00:00')})
+
+                      //constraint
+                      CREATE CONSTRAINT ON (egen:EIA_GenerationAggregate) ASSERT (egen.PlantCode, egen.PublishedDate) IS NODE KEY
+
+    //Genscape Generation Aggregate
+    //create Generator Aggregate based on EIA aggregate; some are null so needed to load separately.
+    MATCH (ga:EIA_GenerationAggregate)
+    WHERE ga.StreetAddress IS NOT NULL AND ga.City IS NOT NULL AND ga.County IS NOT NULL
+    CREATE (:GenerationAggregate {GID: ga.PlantCode,
+    									 Name: ga.PlantName,
+    									 Address: ga.StreetAddress,
+    									 City: ga.City,
+    									 State: ga.State,
+    									 ZipCode: ga.Zip,
+    									 County: ga.County,
+    									 Type: "Powerplant"})
+
+                      //CONSTRAINT
+                       CREATE CONSTRAINT ON (g:GenerationAggregate) ASSERT (g.GID) IS UNIQUE
+
+                       //Generator Aggregate to EIA Aggregate relationship
+                       MATCH  (eg:EIA_GenerationAggregate),(ga:GenerationAggregate)
+                       WHERE (eg.PlantCode = ga.GID)
+                       MERGE (eg) -[:IS_REFERENCE_OF]->(ga)
+
+      //Genscape Generator
+      //Load all genscape generators from the eia
+      //in the initial build i am including the plant id, and will drop after the relationships are built;
+      // this is due to the fact that 147 units all have the same unique properties that make up a node
+      MATCH (eg:EIA_Generator),(ega:EIA_GenerationAggregate)
+      WHERE eg.PlantCode=ega.PlantCode
+      CREATE (:Generator {Generator: eg.GeneratorID,
+      									 Technology: eg.Technology,
+      									 PrimeMover: eg.PrimeMover,
+      									 Capacity: eg.NameplateCapacityMW,
+      									 SummerCapacity: eg.SummerCapacityMW,
+      									 WinterCapacity: eg.WinterCapacityMW,
+      									 Latitude: ega.Latitude,
+      									 Longitude: ega.Longitude,
+                         temp_plantid:eg.PlantCode})
+
+                         //RELATIONSHIP BETWEEN GENSCAPE GENERATOR AND EIA BASED ON LOCATION AND NAME OF GENERATOR
+       									 MATCH (eg:EIA_Generator),(g:Generator)
+       									 WHERE eg.PlantCode=g.temp_plantid
+                         AND eg.GeneratorID=g.Generator
+       									 MERGE (eg)-[:IS_REFERENCE_OF]->(g)
+
+                         //removing temp p
+                         MATCH(g:Generator)
+                         REMOVE g.temp_plantid
+
+                        // add in online date
+                        MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator)
+                        WHERE eg.OperatingYear > 1
+                        AND eg.OperatingMonth >= 1
+                        AND eg.OperatingMonth <= 12
+                        SET g.OnlineDate = date(eg.OperatingYear +"-"+ eg.OperatingMonth +"-01")
+                        //RETURN g.OnlineDate, eg.OperatingYear, g.Generator
+
+                                        //add in online date for the 130 units which have an unknown start date.
+                                        //ambiguously making the 1st of the Month
+                                        MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator)
+                                        WHERE eg.OperatingYear > 1
+                                        AND (eg.OperatingMonth = 0
+                                        OR eg.OperatingMonth > 12)
+                                        SET g.OnlineDate = date(eg.OperatingYear +"-01-01")
+                                        //RETURN g.OnlineDate, eg.OperatingYear, g.Generator
+
+                                      // add in online date for those planned?
+                                      MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator)
+                                      WHERE eg.EffectiveYear > 1
+                                      SET g.PlannedOnlineDate = date(eg.EffectiveYear +"-"+ eg.EffectiveMonth +"-01")
+                                      //RETURN g.PlannedOnlineDate, eg.EffectiveYear, g.Generator
+
+                        //update units which have been retired
+      									 MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator)
+      									 WHERE eg.RetirementYear > 1
+      									 SET g.RetiredDate = date(eg.RetirementYear +"-"+ eg.RetirementMonth +"-01")
+      									 //RETURN g.RetiredDate, eg.PlannedRetirementYear, g.Generator
+
+                                     //update plants which are planned to retire
+                                     MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator)
+                                     WHERE eg.PlannedRetirementYear > 1
+                                     SET g.RetiredDate = date(eg.PlannedRetirementYear +"-"+ eg.PlannedRetirementMonth +"-01")
+                                     //RETURN g.RetiredDate, eg.PlannedRetirementYear, g.GeneratorID
+
+                         //Generator to GenerationAggregate
+                         MATCH (eg:EIA_Generator) -[:IS_REFERENCE_OF]-> (g:Generator), (ega:EIA_GenerationAggregate)-[:IS_REFERENCE_OF]-> (ga: GenerationAggregate)
+                         WHERE eg.PlantCode=ega.PlantCode
+                         MERGE (g) -[:IS_PART_OF]->(ga)
+
+//Operating status
+    //Getting Unique Status from EIA to related to generator status; need a "dictionary" for these
+    MATCH(eg:EIA_Generator)
+    WHERE eg.Status IS NOT NULL
+    MERGE(:OperatingStatus{Status:eg.Status})
+
+    //CONSTRAINT
+    CREATE CONSTRAINT ON (operatingstatus:OperatingStatus) ASSERT (operatingstatus.Status) IS UNIQUE
+
+    //Updating the Operating Status to include description by first creating a temp node
+    LOAD CSV WITH HEADERS FROM "file:///EIA860_OperatingStatusDescription_Y2018.csv" as o
+    MERGE(:operatingDesc {Status:o.`Generator Status Code`,
+                          StatusDescription:o.`Generator Status Code Description`})
+
+                          // update the description
+                            MATCH (o:OperatingStatus), (d:operatingDesc)
+                            WHERE o.Status=d.Status
+                            SET o.StatusDescription = d.StatusDescription
+
+                            // delete the description node
+                            match (o:operatingDesc)
+                            delete o
+
+          //Generator to Operational status
+          Match (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (o:OperatingStatus)
+          WHERE eg.Status=o.Status
+          MERGE (g)-[:IS_OF_STATUS]->(o)
+            //return g.Generator, eg.Status, o.Status
+
+//OWNER
+    //eia Owner
+    LOAD CSV WITH HEADERS FROM "file:///EIA860_Owner_Y2018.csv" as o
+    CREATE (:EIA_Owner {PlantCode: toInt(o.`Plant Code`),
+                        PlantName:o.`Plant Name`,
+                        State:o.`State`,
+                        GeneratorId:o.`Generator ID`,
+                        Status:	o.`Status`,
+                        OwnerName:o.`Owner Name`,
+                        OwnerStreetAddress:o.`Owner Street Address`,
+                        OwnerCity:o.`Owner City`,
+                        OwnerState: o.`Owner State`,
+                        OwnerZip: toInt(o.`Owner Zip`),
+                        OwnershipID:toInt(o.`Ownership ID`),
+                        PercentOwned:o.`Percent Owned`,
+                        PublishedDate:datetime('2019-09-03T00:00:00')})
+
+                        //Owner
+                        MATCH (eo:EIA_Owner)
+                        WITH eo.OwnerName as Name,
+                        eo.OwnerStreetAddress as Address,
+                        eo.OwnerCity as City,
+                        eo.OwnerState as State,
+                        eo.OwnerZip as Zip,
+                        count(*) as total
+                        CREATE (:Owner { Name: Name,
+                        									 Address: Address,
+                        									 Country: "United States",
+                        									 City: City,
+                        									 State: State,
+                        									 ZipCode: Zip})
+
+                        					//CONSTRAINT ON OWNER but name is not unique,
+                                  //and some owners don't have the other information in the node, so cant use node key
+                        					// CREATE CONSTRAINT ON (owner:Owner) ASSERT owner.OwnerID IS UNIQUE
+                        					// CREATE CONSTRAINT ON (owner:Owner) ASSERT (owner.Name, owner.ZipCode) IS NODE KEY
+
+                       //creating relationship of EIA owner to Owner
+                       MATCH (eo:EIA_Owner),(o:Owner)
+                       WHERE eo.OwnerName=o.Name
+                       AND eo.OwnerStreetAddress=o.Address
+                       AND eo.OwnerZip=o.ZipCode
+                       MERGE (eo)-[:IS_REFERENCE_OF]->(o)
+
+                       //relationship of owner to unit
+                       MATCH (eo:EIA_Owner)-[r:IS_REFERENCE_OF]->(o:Owner),(eg:EIA_Generator)-[r1:IS_REFERENCE_OF]->(g:Generator)
+                       WHERE eo.PlantCode = eg.PlantCode
+                       AND eo.GeneratorId = eg.GeneratorID
+                       MERGE (o)-[:IS_OWNER_OF{PercentOwnership:eo.PercentOwned}]->(g)
+
+//FUEL TYPE
+    //eia FUEL TYPE
+    LOAD CSV WITH HEADERS FROM "file:///EIA860_FuelType_Y2018.csv" as ft
+    CREATE (:FuelType {FuelType: ft.`Fuel Type`,
+                        SourceCode: ft.`Source Code`,
+                        UnitLabel: ft.`Unit Label`,
+                        MMBtuLower: ft.`MMBtu Lower`,
+                        MMBtuUpper: ft.`MMBtu Upper`,
+                        EnergySourceDescription: ft.`Energy Source Description`,
+                        Classification: ft.Classification})
+
+                        //constraint
+                          CREATE CONSTRAINT ON (ft:FuelType) ASSERT (ft.SourceCode, ft.FuelType) IS NODE KEY
+
+                          //relationship to unit
+                          MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (ft:FuelType)
+                          WHERE eg.EnergySource1 = ft.SourceCode
+                          MERGE (g)-[:OF_FUEL_TYPE {rank: 1}]->(ft)
+
+                          MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (ft:FuelType)
+                          WHERE eg.EnergySource2 = ft.SourceCode
+                          MERGE (g)-[:OF_FUEL_TYPE {rank: 2}]->(ft)
+
+                          MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (ft:FuelType)
+                          WHERE eg.EnergySource3 = ft.SourceCode
+                          MERGE (g)-[:OF_FUEL_TYPE {rank: 3}]->(ft)
+
+                          MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (ft:FuelType)
+                          WHERE eg.EnergySource4 = ft.SourceCode
+                          MERGE (g)-[:OF_FUEL_TYPE {rank: 4}]->(ft)
+
+                          MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (ft:FuelType)
+                          WHERE eg.EnergySource5 = ft.SourceCode
+                          MERGE (g)-[:OF_FUEL_TYPE {rank: 5}]->(ft)
+
+                          MATCH (eg:EIA_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (ft:FuelType)
+                          WHERE eg.EnergySource6 = ft.SourceCode
+                          MERGE (g)-[:OF_FUEL_TYPE {rank: 6}]->(ft)
+
+//AREA
+    //Area created from PSSE
+    MATCH (pb:PSSE_Bus)
+    WITH pb.AreaName as a, count(pb) as count
+    MERGE(:Area {Name:a})
+
+    //relationship bus to area
+    MATCH (pb:PSSE_Bus)-[:IS_REFERENCE_OF]->(b:Bus),(a:Area)
+    WHERE pb.AreaName=a.Name
+    MERGE (b)-[:IS_IN_AREA]->(a)
