@@ -1,0 +1,10 @@
+// count how many units are renewable
+//query 1
+MATCH (g:Generator)-[r:OF_FUEL_TYPE]-(ft:FuelType{Classification:"Renewable Fuels"})
+RETURN count(g)
+
+//count how many units are renewables
+//query 2
+MATCH (g:Generator)-[r:OF_FUEL_TYPE]-(ft:FuelType)
+WHERE ft.Classification="Renewable Fuels"
+RETURN count(g)
