@@ -1,0 +1,31 @@
+// checking duplicate relationships for bus
+match (pbus:PSSE_Bus)-[r:IS_REFERENCE_OF]->(bus:Bus)
+with  bus,count(r) as rels
+where rels>1
+return bus,rels
+
+// checking duplicate relationships for generator to genagg
+match (gen:Generator)-[r:IS_PART_OF]->(ga:GenerationAggregate)
+with  gen,count(r) as rels
+where rels>1
+return gen,rels
+
+//checking how many generators are identical
+MATCH (g:Generator)
+WITHcount(g) as total,
+    g.GeneratorID as ge,
+    g.Technology as tech,
+    g.PrimeMover as move,
+    g.Capcaity as cap,
+    g.SummerCapacity as scap,
+    g.WinterCapacity as wcap,
+   	g.Latitude as lat,
+    g.Longitude as long
+WHERE total>1
+RETURN total, ge, tech, move, cap, scap, wcap, lat, long
+// 147 ARE THE SAME.. what makes the generators different
+
+//generators missing Owner
+MATCH (g:Generator)
+WHERE NOT ()-[:IS_OWNER_OF]->(g)
+RETURN count(g)
