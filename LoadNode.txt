@@ -132,22 +132,21 @@ WHERE pl.Id = plt.Id
       AND pl.PublishedDate=plt.PublishedDate
 delete plt
 
-											//finding all nodes that might be "new" load nodes, and creating them, CALLING THEM TEMP
+											//finding all nodes that might be "new" load nodes, and creating them, adding property RequireValidation;
+											//there are some that have
 											MATCH (pl:PSSE_Load)
 											WHERE NOT (pl)-[:IS_UPDATE_OF]-()
 											AND NOT ()-[:IS_UPDATE_OF]-(pl)
+											AND NOT ()-[:IS_CANDIDATE_OF]-(pl)
+											AND NOT (pl)-[:IS_CANDIDATE_OF]-()
 											AND NOT (pl)-[:IS_REFERENCE_OF]-()
 											//RETURN count (pl)
-											MERGE (:Load {LoadName:pl.NameOfBus + '_' + pl.Id, Temp:True})
+											MERGE (:Load {LoadName:pl.NameOfBus + '_' + pl.Id, RequireValidation:True})
 
 											// create relationships to the new nodes/reference nodes
-											MATCH  (pl:PSSE_Load), (l:Load)
-											WHERE NOT ()-[:IS_REFERENCE_OF]-(l)
-											AND NOT (pl)-[:IS_UPDATE_OF]-()
-											AND NOT ()-[:IS_UPDATE_OF]-(pl)
-											AND l.LoadName = pl.NameOfBus + '_' + pl.Id
+											MATCH  (pl:PSSE_Load), (l:Load{RequireValidation:True})
+											WHERE  l.LoadName = pl.NameOfBus + '_' + pl.Id
 											MERGE (pl)-[:IS_REFERENCE_OF]->(l)
-
 
 //FIND ALL THE LOAD NODES WHICH HAVE NO REFERENCE SET
 MATCH (l:Load),(pl:PSSE_Load)
