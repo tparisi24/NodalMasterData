@@ -544,6 +544,17 @@
                          WHERE eg.PlantCode=ega.PlantCode
                          MERGE (g) -[:IS_PART_OF]->(ga)
 
+                        //relationship to seer (automatically found 1399 relationships, ~300 missing)
+                        MATCH (sgen:SEER_Generator),(g:Generator)-[:IS_PART_OF]->(ga:GenerationAggregate)
+                        WHERE sgen.eia_latitude=g.Latitude
+                        AND sgen.eia_longitude=g.Longitude
+                        AND sgen.unit_name = ga.Name +" " + g.Generator
+                        AND NOT (sgen)-[:IS_REFERENCE_OF]->(g)
+                        MERGE (sgen)-[:IS_REFERENCE_OF]->(g)
+
+//bus to gen Mapping
+MATCH ()
+
 //Operating status
     //Getting Unique Status from EIA to related to generator status; need a "dictionary" for these
     MATCH(eg:EIA_Generator)
@@ -672,3 +683,38 @@
     MATCH (pb:PSSE_Bus)-[:IS_REFERENCE_OF]->(b:Bus),(a:Area)
     WHERE pb.AreaName=a.Name
     MERGE (b)-[:IS_IN_AREA]->(a)
+
+//CROW to Offline Model Mapping
+//ISO Branch AGGREGATE
+LOAD CSV WITH HEADERS FROM "file:///ISO_Transformer.csv" as t
+CREATE (:ISO_BranchAggregate {EMSKey: t.`EMS Key`,
+															EMSCompositeKey:	t.`EMS Composite Key`,
+															Name:	t.`Name`,
+															Class:	t.`Class`,
+															Segment:	t.`EMS Segment`,
+															IDCCircuitID:	t.`IDC Circuit ID`,
+															HighBusName:	t.`IDC High Bus Name`,
+															HighBusNumber:	t.`IDC High Bus Number`,
+															LowBusName:	t.`IDC Low Bus Name`,
+															LowBusNumber:	t.`IDC Low Bus Number`,
+															TerrBusName:	t.`IDC Terr Bus Name`,
+															TerrBusNumber:	t.`IDC Terr Bus Number`,
+															InstanceLabel:	t.`Instance Label`,
+															VoltageClass:	t.`Voltage Class`,
+															Type:	t.`Type`})
+
+LOAD CSV WITH HEADERS FROM "file:///ISO_Lines.csv" as l
+WITH l
+WHERE l.`EMS Key` IS NOT NULL
+CREATE(:ISO_BranchAggregate {EMSKey:l.`EMS Key`,
+														EMSCompositeKey:l.`EMS Composite Key`,
+														Name:	l.`Name`,
+														Class:l.`Class`,
+														SPPEMSName:l.`SPP EMS Name`,
+														IDCCircuitID:l.`IDC Circuit ID`,
+														IDCFromBusName:l.`IDC From Bus Name`,
+														IDFromBusNumber:l.`IDC From Bus Number`,
+														IDCToBusName: l.`IDC To Bus Name`,
+														IDCToBusNumber: l.`IDC To Bus Number`,
+														VoltageClass: l.`Voltage Class`,
+														Type: l.`Type`})
