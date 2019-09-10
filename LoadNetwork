@@ -552,8 +552,11 @@
                         AND NOT (sgen)-[:IS_REFERENCE_OF]->(g)
                         MERGE (sgen)-[:IS_REFERENCE_OF]->(g)
 
-//bus to gen Mapping
-MATCH ()
+                        //bus to gen Mapping
+                        MATCH (pg:PSSE_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (pb:PSSE_Bus)-[:IS_REFERENCE_OF]->(b:Bus)
+                        WHERE pg.NumberOfBus=pb.Number
+                        AND pg.PublishedDate=pb.PublishedDate
+                        MERGE (g)-[:INJECTS_POWER]->(b)
 
 //Operating status
     //Getting Unique Status from EIA to related to generator status; need a "dictionary" for these
@@ -683,6 +686,9 @@ MATCH ()
     MATCH (pb:PSSE_Bus)-[:IS_REFERENCE_OF]->(b:Bus),(a:Area)
     WHERE pb.AreaName=a.Name
     MERGE (b)-[:IS_IN_AREA]->(a)
+
+
+//ZONE IS NOT INCLUDED IN THE FILE SO NEED TO FIND THE ZONE AS WELL
 
 //CROW to Offline Model Mapping
 //ISO Branch AGGREGATE
