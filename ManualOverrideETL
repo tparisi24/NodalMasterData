@@ -1,0 +1,22 @@
+//Semi-Automated Mapping
+// after a match < 90% confident is found it gets labeled a candidate
+//to find ALL candidates
+MATCH(a)-[:IS_CANDIDATE_OF{confidence:"80.00%"}]-(b)
+RETURN a,b
+
+//find specific candidates for the reference set
+MATCH(cpl:PSSE_Load)-[:IS_CANDIDATE_OF{confidence:"80.00%"}]-(pl:PSSE_Load)
+RETURN cpl,pl
+
+// if the analyst gives sign off then switch IS_CANDIDATE_OF to IS_REFERENCE_OF
+// give the relationship a property ManualOverride: True and remove the IS_CANDIDATE_OF reference
+MATCH(cpl:PSSE_Load)-[r:IS_CANDIDATE_OF{confidence:"80.00%"}]-(pl:PSSE_Load)
+SET r.ManualOverride = True
+
+//Automated process to update the candidate
+MATCH (cpl:PSSE_Load)-[r:IS_CANDIDATE_OF{ManualOverride:True}]-(pl:PSSE_Load)-[r1:IS_REFERENCE_OF]-(l:Load)
+MERGE (cpl)-[:IS_REFERENCE_OF]->(l)
+MERGE (cpl)-[:IS_UPDATE_OF {confidence:r.confidence,updateDate:r.updateDate, ManualOverride:r.ManualOverride}]->(pl)
+DELETE r
+DELETE r1
+RETURN cpl,pl,l
