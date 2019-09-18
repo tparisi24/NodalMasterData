@@ -75,6 +75,7 @@
                       MATCH (pl:PSSE_Load)-[:IS_REFERENCE_OF]-> (l:Load), (b:Bus)
                       WHERE pl.NumberOfBus = b.PSSEID
                       MERGE (b)-[:DRAWS_POWER]->(l);
+
     //SEER Bus
     LOAD CSV WITH HEADERS FROM "file:///SEER_Bus-2019_07.csv" as b
     MERGE (:SEER_Bus {BusID: toInt(b.bus_id),
@@ -89,11 +90,66 @@
                        //constraint needs to be made on type and name.. who of them can be the same.. all nodes must have these.. not a good option
                        CREATE CONSTRAINT ON (bus:SEER_Bus) ASSERT (bus.BusID,bus.PublishedDate) IS NODE KEY
 
-                       //relationship from psse bus to genscape bus and seer bus to genscape bus
-                       //maybe want to add a source node or property of reference set
-                       MATCH  (sbus:SEER_Bus),(bus:Bus)
-                       WHERE (sbus.iso_bus_number = bus.PSSEID)
+                       // relationship from psse bus to genscape bus and seer bus to genscape bus
+                       // the bus id to bus id is not the same over time, so I would need to know what file SEER is using for it's buses.
+                       // these are 100% matches
+                       MATCH  (sbus:SEER_Bus),(pbus:PSSE_Bus)-[:IS_REFERENCE_OF]->(bus:Bus)
+                       WHERE (sbus.iso_bus_number = pbus.Number)
+                       AND (sbus.bus_name = pbus.Name)
                        MERGE (sbus) -[:IS_REFERENCE_OF]->(bus)
+
+                      //check the name of bus from SEER to that of psse; if they are the same but the number still create relationship
+                       MATCH  (sbus:SEER_Bus),(pbus:PSSE_Bus)-[:IS_REFERENCE_OF]->(bus:Bus)
+                       WHERE (sbus.bus_name = pbus.Name)
+                       AND NOT (sbus)-[:IS_REFERENCE_OF]->(bus)
+                       MERGE (sbus) -[:IS_REFERENCE_OF]->(bus)
+
+                      // from generators that are 100% matches, find the units associated to these
+                      MATCH (sgen:SEER_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (sbus:SEER_Bus)-[:IS_REFERENCE_OF]->(b:Bus)
+                      WHERE sgen.bus_id=sbus.BusID
+                      MERGE (g)-[:INJECTS_POWER]->(b)
+
+                      //Use the SEER matches to find those in PSSE generator
+                      MATCH (sgen:SEER_Generator)-[:IS_REFERENCE_OF]->(g:Generator)-[:INJECTS_POWER]->(b:Bus)<-[:IS_REFERENCE_OF]-(pbus:PSSE_Bus),(pgen:PSSE_Generator)
+                      WHERE NOT (sgen)-[:IS_REFERENCE_OF]->(g)
+                      AND sgen.bus_id=pbus.Number
+                      AND pgen.NumberOfBus=pbus.Number
+                      return sgen, pgen, g
+                      limit 10
+                      MERGE (pgen)-[:IS_CANDIDATE_OF]->(g)
+
+                       MATCH  (sbus:SEER_Bus),(pbus:PSSE_Bus)-[:IS_REFERENCE_OF]->(bus:Bus)
+                       WHERE (sbus.iso_bus_number = pbus.Number)
+                       AND (sbus.bus_name = pbus.Name)
+                       //return sbus, bus, pbus
+                       //limit 100
+                       MERGE (sbus) -[:IS_REFERENCE_OF]->(bus)
+
+    // GENSCAPE POWERRT RESEARCH OF Bus
+    LOAD CSV WITH HEADERS FROM "file:///GenscapePowerRTBus.csv"as ba
+    CREATE (:PowerRTBus {BusId: toInt(ba.BusId),
+                  SubstationCodeGlobalEntityId: toInt(ba.SubstationCodeGlobalEntityId),
+                  OilRegionIDGlobalEntityIdGlobalEntityId: toInt(ba.OilRegionIDGlobalEntityIdGlobalEntityId),
+                  StationIDEndGlobalEntityIdGlobalEntityId: toInt(ba.StationIDEndGlobalEntityIdGlobalEntityId),
+                  StationIDStartGlobalEntityIdGlobalEntityId: toInt(ba.StationIDStartGlobalEntityIdGlobalEntityId),
+                  OperatorIDGlobalEntityIdGlobalEntityId: toInt(ba.OperatorIDGlobalEntityIdGlobalEntityId),
+                  CommodityIDGlobalEntityIdGlobalEntityId: toInt(ba.CommodityIDGlobalEntityIdGlobalEntityId),
+                  CountryIso3GlobalEntityIdGlobalEntityId: toInt(ba.CountryIso3GlobalEntityIdGlobalEntityId),
+                  SubstationCode_Name: ba.SubstationCode_Name,
+                  Name: ba.Name,
+                  Code: toInt(ba.Code),
+                  SubstationCode_Code: toInt(ba.SubstationCode_Code),
+                  KWVolt: tofloat(ba.KWVolt),
+                  NomVolt: tofloat(ba.NomVolt),
+                  PUVolt: toFloat(ba.PUVolt),
+                  Angle: ba.Angle,
+                  LoadMW: toFloat(ba.LoadMW),
+                  LoadMVR: ba.LoadMVR,
+                  GenMW: tofloat(ba.GenMW),
+                  GenMVR: ba.GenMVR,
+                  SwitchedShuntMvar: ba.SwitchedShuntMvar,
+                  ActGShuntMW: toFloat(ba.ActGShuntMW),
+                  ActBShuntMVR: ba.ActBShuntMVR})
 
 //BRANCH
     //psse branches
@@ -145,21 +201,76 @@
                           MERGE (bs)-[:SENDS_POWER]->(b)
 
 //Bus Aggregate
+
+    //ISO Bus AGGREGATE
+    LOAD CSV WITH HEADERS FROM "file:///SL_Station_BusNumber_Turbine_and_FuelType.csv" as iso
+    CREATE (:ISO_BusAggregate{ SettlementLocation:iso.SETTLEMENTLOCATION,
+    Area: iso.EMS_AREA,
+    Station: iso.EMS_STATION,
+    PSSE_Number: iso.PSSE_NUM,
+    PSSE_Name: iso.PSSE_NAME,
+    KV: iso.EMS_KV,
+    Unit: iso.EMS_UNIT,
+    MwMax: iso.EMS_MWMAX,
+    TurbineType: iso.TURBINETYPE,
+    FuelType1: iso.FUELTYPE1,
+    FuelType2:iso.FUELTYPE2,
+    PublishedDate:datetime('2019-09-01T00:00:00')})
+
+    //create constraint on settlement location and psse number
+    //not all the file has a psse number so cannot constrain this set.
+    //CREATE CONSTRAINT ON (iso:ISO_BusAggregate) ASSERT (iso.SettlementLocation, iso.PSSE_Number, iso.PublishedDate) IS NODE KEY
+
+    //Genscape Bus AGGREGATE
+    LOAD CSV WITH HEADERS FROM "file:///GenscapePowerRTBusAggregate.csv" as ba
+    CREATE (:PowerRTBusAggregate {DimSubstationId: toInt(ba.DimSubstationId),
+    Code: toInt(ba.Code),
+    Name:ba.Name,
+    SubstationTypeCode_Name:ba.SubstationTypeCode_Name,
+    StreetAddress1:ba.StreetAddress1,
+    StreetAddress2:ba.StreetAddress2,
+    CountrySubdivisionCode_Name:ba.CountrySubdivisionCode_Name,
+    CountryCode_Name:ba.CountryCode_Name,
+    Latitude: toFloat(ba.Latitude),
+    Longitude: toFloat(ba.Longitude),
+    LocationSourceCode_Name:ba.LocationSourceCode_Name,
+    geog:ba.geog,
+    LastChgDateTime: ba.LastChgDateTime})
+
+    //CONSTRAINT
+    CREATE CONSTRAINT ON (prtbusagg:PowerRTBusAggregate) ASSERT (prtbusagg.DimSubstationId) IS UNIQUE
+
+    //CREATE MASTER BUS AGGREGATE FROM THE POWERRT SET
+    MATCH (ba:PowerRTBusAggregate)
+    CREATE (:BusAggregate {
+    Name: ba.Name,
+    Latitude: ba.Latitude,
+    Longitude: ba.Longitude,
+    Address:ba.StreetAddress1,
+    Country: ba.CountryCode_Name})
+
+    //match to powerrt
+    MATCH (prt:PowerRTBusAggregate),(b:BusAggregate)
+    WHERE prt.Latitude=b.Latitude
+    AND prt.Longitude=b.Longitude
+    MERGE (prt)-[:IS_REFERENCE_OF]->(b)
+
     //Descartes
     LOAD CSV WITH HEADERS FROM "file:///Descartes.csv" as d
-    CREATE (:Descartes {Latitude: d.Latitude,
-    										Longitude: d.Longitude})
+    CREATE (:Descartes {Latitude: toFloat(d.Latitude),
+    										Longitude: toFloat(d.Longitude)})
 
     //create constraint on lat and long value
     CREATE CONSTRAINT ON (descartes:Descartes) ASSERT (descartes.Latitude, descartes.Longitude) IS NODE KEY
 
-    //matching descartes Datamatch(d:Descartes), (b:BusAggregate)
-    where tofloat(b.Latitude) >= tofloat(d.Latitude)-.0001
-    and tofloat(b.Latitude)<= tofloat(d.Latitude)+.0001
-    and tofloat(b.Longitude) >= tofloat(d.Longitude)-.0001
-    and tofloat(b.Longitude)<= tofloat(d.Longitude)+.0001
-    return b.GId, b.Name,d.ID, b.Latitude,d.Latitude,b.Longitude,d.Longitude
-    limit 5
+    //matching descartes Data to the bus aggregate
+    match(d:Descartes), (b:BusAggregate)
+    where b.Latitude >= d.Latitude-.0001
+    and b.Latitude<= d.Latitude+.0001
+    and b.Longitude >= d.Longitude-.0001
+    and b.Longitude<= d.Longitude+.0001
+    MERGE (d)-[:IS_REFERENCE_OF]->(b)
+
 
 //GENERATOR
     // SEER Generator
@@ -544,16 +655,43 @@
                          WHERE eg.PlantCode=ega.PlantCode
                          MERGE (g) -[:IS_PART_OF]->(ga)
 
-                        //relationship to seer (automatically found 1399 relationships, ~300 missing)
-                        MATCH (sgen:SEER_Generator),(g:Generator)-[:IS_PART_OF]->(ga:GenerationAggregate)
-                        WHERE sgen.eia_latitude=g.Latitude
-                        AND sgen.eia_longitude=g.Longitude
-                        AND sgen.unit_name = ga.Name +" " + g.Generator
-                        AND NOT (sgen)-[:IS_REFERENCE_OF]->(g)
-                        MERGE (sgen)-[:IS_REFERENCE_OF]->(g)
+                        //GENERATOR TO SEER
+                            //ROUND 1
+                            //relationship to seer (automatically found 1407 relationships, ~380 missing)
+                            MATCH (sgen:SEER_Generator),(g:Generator)-[:IS_PART_OF]->(ga:GenerationAggregate)
+                            WHERE sgen.eia_latitude<=g.Latitude +.001
+                            AND sgen.eia_latitude>=g.Latitude -.001
+                            AND sgen.eia_longitude<=g.Longitude +.0001
+                            AND sgen.eia_longitude>=g.Longitude -.0001
+                            AND sgen.unit_name = ga.Name +" " + g.Generator
+                            AND NOT (sgen)-[:IS_REFERENCE_OF]->(g)
+                            MERGE (sgen)-[:IS_REFERENCE_OF]->(g)
 
-                        //bus to gen Mapping
-                        MATCH (pg:PSSE_Generator)-[:IS_REFERENCE_OF]->(g:Generator), (pb:PSSE_Bus)-[:IS_REFERENCE_OF]->(b:Bus)
+                            //ROUND 2
+                            //matching any seer which have not been previously mapped based on other criteria (83 found, ~299 missing)
+                            //causes duplicates
+                            MATCH(g:Generator)-[:IS_PART_OF]->(ga:GenerationAggregate),(sgen:SEER_Generator)
+                            WHERE NOT (sgen)-[:IS_REFERENCE_OF]->(g)
+                            AND NOT (g)<-[:IS_REFERENCE_OF]-(sgen)
+                            AND sgen.eia_latitude<=g.Latitude +.001
+                            AND sgen.eia_latitude>=g.Latitude -.001
+                            AND sgen.eia_longitude<=g.Longitude +.0001
+                            AND sgen.eia_longitude>=g.Longitude -.0001
+                            AND sgen.eia_plant_name=ga.Name
+                            AND sgen.unit_name CONTAINS (g.Generator)
+                            AND g.Capacity<=(sgen.capacity*1.05)
+                            AND g.Capacity >=(sgen.capacity*.95)
+                            AND ga.Name <> "Montezuma"
+                            AND g.Generator <>"CAT"
+                            AND ga.Name <> "Northeastern"
+                            AND ga.Name <>"Augusta Electric Plant No 2"
+                            AND ga.Name <> "Sharpe"
+                            AND ga.Name <> "Granite Falls 2"
+                            MERGE (sgen)-[:IS_REFERENCE_OF]->(g)
+
+                        //BUS TO GEN MAPPING
+                        //better solution, find the bus id with the same reference date and use that to find the bus
+                        MATCH (pg:PSSE_Generator)-[:IS_REFERENCE_OF]->(g:Generator), [r:IS_UPDATE_OF]-(pb:PSSE_Bus)-[:IS_REFERENCE_OF]->(b:Bus)
                         WHERE pg.NumberOfBus=pb.Number
                         AND pg.PublishedDate=pb.PublishedDate
                         MERGE (g)-[:INJECTS_POWER]->(b)
@@ -602,7 +740,26 @@
                         OwnerZip: toInt(o.`Owner Zip`),
                         OwnershipID:toInt(o.`Ownership ID`),
                         PercentOwned:o.`Percent Owned`,
-                        PublishedDate:datetime('2019-09-03T00:00:00')})
+                        PublishedDate: datetime('2019-09-03T00:00:00')})
+
+    //PSSE OWNER
+    LOAD CSV WITH HEADERS FROM "file:///PSSE_Owner-2019_09.csv" as j
+    CREATE (:PSSE_Owner {OwnerNumber: j.`Owner Number`,
+                      OwnerName: j.`Owner Name`,
+                      NumberBuses:j.`Num Buses`,
+                      NumberLoads: j.`Num Loads`,
+                      NumberGenerators: j.`Num Gens`,
+                      MinBusNumber: j.`Min Bus Num`,
+                      MaxBusNumber: j.`Max Bus Num`,
+                      GenMW: j.`Gen MW`,
+                      GenMvar: j.`Gen Mvar`,
+                      GenMaxMW: j.`Gen Max MW`,
+                      LoadMW: j.`Load MW`,
+                      LoadMvar: j.`Load Mvar`,
+                      NumDevices: j.`Num Devices`,
+                      NumBranches: j.`Num Branches`,
+                      Memo: j.`Memo`,
+                      PublishedDate:datetime('2019-09-01T00:00:00')})
 
                         //Owner
                         MATCH (eo:EIA_Owner)
