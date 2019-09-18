@@ -1,10 +1,24 @@
-// count how many units are renewable
-//query 1
-MATCH (g:Generator)-[r:OF_FUEL_TYPE]-(ft:FuelType{Classification:"Renewable Fuels"})
-RETURN count(g)
 
-//count how many units are renewables
-//query 2
-MATCH (g:Generator)-[r:OF_FUEL_TYPE]-(ft:FuelType)
-WHERE ft.Classification="Renewable Fuels"
-RETURN count(g)
+
+//HELPING WITH MAPPING
+          //Finding Matches for descartesmatch (d:Descartes), (g:Generator)-[:IS_PART_OF]->(ga:GenerationAggregate)
+          where d.Longitude=-75.15480447
+          //and g.Longitude=-77.2344
+          AND abs(d.Latitude - g.Latitude) < .1
+          AND abs(d.Longitude - g.Longitude) < .1
+          return distinct
+          abs(d.Latitude - g.Latitude) as LatitudeDistance,
+          abs(d.Longitude - g.Longitude) as LongitudeDistance,
+          d.Latitude,
+          d.Longitude,
+          ga.Name
+          order by LatitudeDistance desc
+
+//QA DATASETS
+          //finding issues with capacity updates and location differences
+          //finding discrepancies in data from seer
+          MATCH (sgen:SEER_Generator)-[:IS_REFERENCE_OF]->(g:Generator)-[:IS_PART_OF]->(ga:GenerationAggregate)
+          WHERE  ((sgen.capacity-g.Capacity)/g.Capacity) > .05
+          OR abs(sgen.eia_latitude - g.Latitude) >.0001
+          OR abs(sgen.eia_longitude - g.Longitude) >.0001
+          RETURN sgen.unit_id,sgen.unit_name,sgen.capacity,ga.Name,g.Generator,g.Capacity,abs(((sgen.capacity-g.Capacity)/g.Capacity)*100) as percentCapacityDifference, sgen.eia_latitude - g.Latitude as latitudeDifference,sgen.eia_longitude - g.Longitude as longitudeDifference
