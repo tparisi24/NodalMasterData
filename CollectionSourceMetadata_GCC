@@ -1,0 +1,32 @@
+//load collections
+LOAD CSV WITH HEADERS FROM "file:///GCC_SPPJobs.csv" as j
+MERGE(:Collections {CollectionID: j.id,
+CollectionName:j.name,
+DatasetType:j.dataset,
+AttempsInterval:j.attempts_interval,
+CollectionStatus:j.status,
+CollectionArguments:j.args,
+CollectionSource:j.source_id,
+MaximumAttempts:j.max_attempts,
+ForcedCollection:j.force_fetch,
+CollectionInterval:j.job_interval,
+TimeZone:j.time_zone,
+CollectedFor: j.datein_arg,
+DefaultCollectedfor:j.default_datein_arg})
+
+//constrain the collections
+
+
+//Add In a technology type
+MERGE(:TechnologyGroup
+{Name: "Global Content Collection",
+Alias: "GCC"})
+
+//TEMP CATALOG
+LOAD CSV WITH HEADERS FROM "file:///GCCCollectedData_SPP.csv" as d
+CREATE (:TempGCCCatalog { ReportCenterID:d.rc_id,
+                  ReportCenterName:d.rc_name,
+                  ItemID:d.item_id,
+                  ItemName:d.i_name,
+                  CollectionID:d.job_id
+                  })
