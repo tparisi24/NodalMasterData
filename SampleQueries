@@ -1,19 +1,3 @@
-
-
-//HELPING WITH MAPPING
-          //Finding Matches for descartesmatch (d:Descartes), (g:Generator)-[:IS_PART_OF]->(ga:GenerationAggregate)
-          where d.Longitude=-75.15480447
-          //and g.Longitude=-77.2344
-          AND abs(d.Latitude - g.Latitude) < .1
-          AND abs(d.Longitude - g.Longitude) < .1
-          return distinct
-          abs(d.Latitude - g.Latitude) as LatitudeDistance,
-          abs(d.Longitude - g.Longitude) as LongitudeDistance,
-          d.Latitude,
-          d.Longitude,
-          ga.Name
-          order by LatitudeDistance desc
-
 //QA DATASETS
           //finding issues with capacity updates and location differences
           //finding discrepancies in data from seer
@@ -22,3 +6,47 @@
           OR abs(sgen.eia_latitude - g.Latitude) >.0001
           OR abs(sgen.eia_longitude - g.Longitude) >.0001
           RETURN sgen.unit_id,sgen.unit_name,sgen.capacity,ga.Name,g.Generator,g.Capacity,abs(((sgen.capacity-g.Capacity)/g.Capacity)*100) as percentCapacityDifference, sgen.eia_latitude - g.Latitude as latitudeDifference,sgen.eia_longitude - g.Longitude as longitudeDifference
+
+//Querying data
+          //give me the nodes in a certain region, with their 1 off relationships
+          MATCH (n)-[r]-(b)-[:IS_IN_AREA]-(a:Area{Name:"SPA"})
+          return b, n
+          limit 10
+
+          // give all the nodes in a certain region, related (10 off the oroginal node)
+          MATCH (n)-[r*]-(b)-[:IS_IN_AREA]-(a:Area{Name:"SPA"})
+          return b, n
+          limit 10
+
+// checking the update of a specfic load nodes
+          Match(l:Load {LoadName:"GRDA_B2B3_99")<-[r*]-(rl)
+          return l, rl
+
+// finding data based on published datetime
+          Match(l:Load {LoadName:'GRDA_B2B3_99'})<-[:IS_REFERENCE_OF]-(rl)-[r*]->(prl)
+          return l.LoadName,rl.MW,rl.PublishedDate,prl.MW,prl.PublishedDate
+
+//finding the candidates
+          MATCH (rl)-[rc:IS_CANDIDATE_OF]->(ol)-[:IS_REFERENCE_OF]->(l:Load)-[r]-(n)
+          return rl, ol, l, n,rc
+          limit 11
+
+          //finding the  total number candidates
+          MATCH (rl)-[rc:IS_CANDIDATE_OF]->(ol)
+          return count(rl)
+
+          //finding the total number of
+          MATCH (l:Load)
+          return count(l)
+
+          //~5% of the total dataset has "candidates"
+
+          //Manual Override property
+          match(cpl)-[r:IS_UPDATE_OF{ManualOverride:True}]->(pl)
+          return cpl, pl
+          limit 10
+
+          // you dont need to specify what the manual override was part of
+          match(cpl)-[r*{ManualOverride:True}]->(pl)
+          return cpl, pl
+          limit 10
