@@ -25,7 +25,7 @@
                         CREATE CONSTRAINT ON (psse_load:PSSE_Load) ASSERT (psse_load.NumberOfBus,psse_load.Id,psse_load.PublishedDate) IS NODE KEY
 
     //Genscape Load
-    creating a master load node from the reference SET
+    //creating a master load node from the reference SET
     MATCH  (pl:PSSE_Load)
     MERGE (:Load {LoadName:pl.NameOfBus + '_' + pl.Id})
 
