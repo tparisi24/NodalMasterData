@@ -106,11 +106,7 @@
 		MATCH(g: GeneratingUnit)
 		REMOVE g.TempRelationship
 	
-	//update the properties for units
-	MATCH (n { name: 'Andy' })
-	SET n.age = toString(n.age)
-	RETURN n.name, n.age
-	
+
 	
 					
 					
