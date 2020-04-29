@@ -1,0 +1,126 @@
+//RESET GRAPH
+	match(n)
+	detach delete n
+
+// COUNTRY
+	LOAD CSV WITH HEADERS FROM "file:///Country.csv" as c
+	CREATE (:Country {CountryID: c.`CountryId`,
+					Name: c.`Name`,
+					CountryCode: c.`Code`,
+					Alpha3Code:	c.`Alpha3Code`})
+					
+	CREATE CONSTRAINT ON (c:Country) ASSERT (c.Name, c.CountryCode) IS NODE KEY
+
+//ZONE
+	LOAD CSV WITH HEADERS FROM "file:///Zone.csv" as z
+	CREATE (:Zone {ZoneId: z.`DimGeographicalZoneId`,
+					Name: z.`Name`})
+					
+	CREATE CONSTRAINT ON (z:Zone) ASSERT (z.Name) IS NODE KEY
+
+	//ZONE TO COUNTRY RELATIONSHIP
+		LOAD CSV WITH HEADERS FROM "file:///ZoneToCountry.csv" as ctz
+
+			CREATE (:Temp {ZoneId: ctz.`GeographicalZoneCodeGlobalEntityId`,
+						CountryID: ctz.`CountryCodeGlobalEntityId`})
+		
+		 MATCH  (c:Country),(z:Zone),(t:Temp)
+		 WHERE (c.CountryID = t.CountryID) AND (z.ZoneId = t.ZoneId)
+		 MERGE (z) -[:IS_IN_COUNTRY]->(c)
+
+			// remove the temp
+			match(t:Temp)
+			detach delete t
+//OWNER
+	LOAD CSV WITH HEADERS FROM "file:///Owner.csv" as o
+	CREATE (:Owner {OwnerID: o.`LegalEntityId`,
+					Name: o.`Name`,
+					Address1: o.`Address1`,
+					Address2:	o.`Address2`,
+					City: o.`City`,
+					PostalCode: o.`PostalArea`})
+					
+	CREATE CONSTRAINT ON (o:Owner) ASSERT (o.Name) IS NODE KEY
+	
+//GENERATOR
+	LOAD CSV WITH HEADERS FROM "file:///GeneratingUnit.csv" as g
+	CREATE (:GeneratingUnit {GeneratingUnitId: g.`GeneratingUnitId`,
+					Name: g.`Name`,
+					//Longitude: g.`Address1`,
+					//Latitude: g.`Address2`,
+					InstalledCapacity: g.`NameplateCapacity`,
+					SummerCapacity: g.`SummerCapacity`,
+					WinterCapacity: g.`WinterCapacity` ,
+					//ExpectedOnlineDate: g.``,
+					OnlineDate: g.`OnlineDate`,
+					RetiredDate:g.`RetirementDate`,
+					//Efficienty:
+					//MinStable:
+					//chp:
+					//voc:
+					PrimeMover: g.`PrimeMoverCode_Name`,
+					TempRelationship: g.`PowerPlantCodeGlobalEntityId`})
+					
+	CREATE CONSTRAINT ON (g:GeneratingUnit) ASSERT (g.Name, g.Latitude, g.Longitude) IS NODE KEY			
+
+	//RELATIONSHIP TO OWNER
+	LOAD CSV WITH HEADERS FROM "file:///GenUnitOwnerMapping.csv" as go
+	CREATE (:TempOwnerMap {GeneratingUnitId: go.`GeneratingUnitCodeGlobalEntityId`,
+					OwnerId: go.`LegalEntityCodeGlobalEntityId`,
+					PercentOwnership: go.`Weight`})
+	
+		MATCH (o: Owner), (g:GeneratingUnit), (go:TempOwnerMap)
+		WHERE (o.OwnerID = go.OwnerId) AND (g.GeneratingUnitId = go.GeneratingUnitId) AND EXISTS (go.PercentOwnership)
+		MERGE (o)-[:IS_OWNER_OF{PercentOwnership:go.PercentOwnership}]->(g)
+		
+			MATCH(go: TempOwnerMap)
+			DETACH DELETE go
+			
+//CREATE ENERGY SOURCE
+	LOAD CSV WITH HEADERS FROM "file:///EnergySource.csv" as e
+	//return e limit 100
+	CREATE (:EnergySource {EnergySourceId: e.`EnergySourceId`,
+					Name: e.`Name`,
+					FuelType: e.`FuelType`,
+					Units: e.`UnitLabel`})	
+
+
+//POWERPLANT:GenerationAgg
+	LOAD CSV WITH HEADERS FROM "file:///GenerationAggregate.csv" as ga
+	CREATE (:GenerationAggregate {GenerationAggregateId: ga.`DimPowerPlantId`,
+					Name: ga.`Name`,
+					TempLongitude: ga.`Longitude`,
+					TempLatitude: ga.`Latitude`,
+					City: ga.`City`,
+					geog: ga.`geog`,
+					Type: ga.`EntityType`,
+					EIAId: ga.`EIAId`})
+	
+	//RELATIONSHIP: GENERATIONAGG AND UNIT
+	MATCH ( ga: GenerationAggregate), (g:GeneratingUnit)
+	WHERE (ga.GenerationAggregateId = g.TempRelationship)
+	//RETURN ga, g LIMIT 10
+	MERGE (g) -[:IS_PART_OF]->(ga)
+	
+		//REMOVE TEMP MAPPING PROPERTY
+		MATCH(g: GeneratingUnit)
+		REMOVE g.TempRelationship
+	
+	//update the properties for units
+	MATCH (n { name: 'Andy' })
+	SET n.age = toString(n.age)
+	RETURN n.name, n.age
+	
+	
+					
+					
+					
+					
+					
+					
+					
+					
+					
+					
+					
+					
